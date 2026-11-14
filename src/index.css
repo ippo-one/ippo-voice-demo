@@ -1,0 +1,64 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", "Noto Sans Tamil", "Noto Sans Devanagari", system-ui, -apple-system, sans-serif;
+
+  /* ink: text and primary buttons */
+  --color-ink: #0f1b3d;
+  --color-ink-2: #3b4562;
+  --color-muted: #5b6478;
+  --color-faint: #8a93a8;
+  --color-line: #e6e9f0;
+  --color-soft: #f5f6f9;
+  --color-page: #f3f1ee;
+
+  /* Ippo: the bot's colour */
+  --color-ippo-50: #fff6ef;
+  --color-ippo-100: #ffeadb;
+  --color-ippo-200: #ffd2b2;
+  --color-ippo-300: #ffb37f;
+  --color-ippo-400: #ff8f4a;
+  --color-ippo-500: #ff6b1a;
+  --color-ippo-600: #ec5608;
+  --color-ippo-700: #c44406;
+
+  --color-ok: #1f8a4c;
+  --color-ok-soft: #e6f5ec;
+  --color-bad: #d93a2b;
+  --color-bad-soft: #fdecea;
+  --color-warn: #b7791f;
+  --color-warn-soft: #fdf3e2;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+body {
+  margin: 0;
+  background: var(--color-page);
+  color: var(--color-ink);
+  -webkit-font-smoothing: antialiased;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* hide the chat scroller's bar; the phone has none */
+.no-bar {
+  scrollbar-width: none;
+}
+.no-bar::-webkit-scrollbar {
+  display: none;
+}
+
+/* on a real phone the device draws its own status bar and home bar */
+.bare .phone-status {
+  height: max(12px, env(safe-area-inset-top));
+  visibility: hidden;
+}
+.bare .phone-home {
+  display: none;
+}
