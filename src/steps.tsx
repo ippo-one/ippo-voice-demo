@@ -450,7 +450,8 @@ function AaCard({ c }: { c: Ctx }) {
       </Card>
     );
   if (!consent) return null;
-  const at = Math.max(0, AA_STEPS.findIndex(([s]) => s === consent.status));
+  // "ready": the statements are in and being analysed, the same point as "fetching" on the card
+  const at = consent.status === "ready" ? 2 : Math.max(0, AA_STEPS.findIndex(([s]) => s === consent.status));
   const bad = ["failed", "rejected", "cancelled"].includes(consent.status);
   return (
     <Card>

@@ -210,7 +210,7 @@ async function followAnalysis(a: { id: string; ref?: string }, onStatus: (s: str
   }
 }
 
-/** start_aa: a real Finpass consent link by SMS (the web app's /api/aa, not in the SDK yet). The card follows it. */
+/** start_aa: a real Finpass consent link by SMS (the SDK's aa resource, on the demo server). The card follows it. */
 async function startAa(d: Dispatch<Action>): Promise<string> {
   const r = await fetch("/lp/aa", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ customer: call$.customer, amount: call$.amount }) });
   const c = await r.json().catch(() => ({}));
@@ -239,7 +239,8 @@ export async function followAa(id: string, onConsent: (c: Record<string, any>) =
     if (c.status !== last && last && c.status === "fetching")
       send(`[system] Account Aggregator: they approved and the bank is sending the statement. Say so briefly. There is no result yet.`);
     last = c.status;
-    if (c.status === "completed" && r.analysis) {
+    // the analysis exists once the statements are in ("completed", or "ready" and picked by the server)
+    if (r.analysis) {
       return followAnalysis(r.analysis, () => {}, d);
     }
     if (["failed", "rejected", "cancelled"].includes(c.status))

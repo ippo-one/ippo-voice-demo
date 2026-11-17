@@ -4,7 +4,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { LoanPilot } from "@ippopone/loanpilot";
 
-export type LpEnv = { key?: string; baseUrl?: string; webUrl?: string; name?: string; mobile?: string };
+export type LpEnv = { key?: string; baseUrl?: string; name?: string; mobile?: string };
 type Log = (src: string, what: string, data?: unknown) => void;
 
 const redact = (t: string) =>
@@ -76,28 +76,6 @@ function summarise(a: Record<string, any>) {
 
 export function lpRoutes(env: LpEnv, log: Log) {
   const client = () => new LoanPilot({ apiKey: env.key!, fetch: loggedFetch(log), ...(env.baseUrl ? { baseUrl: env.baseUrl } : {}) });
-  const web = (env.webUrl ?? "https://app.ippo.one").replace(/\/$/, "");
-  /** The web app's own API (for what the SDK can't do yet), same key, logged as [lp-api]. */
-  async function webApi(method: string, path: string, body?: unknown): Promise<Record<string, any>> {
-    const t0 = Date.now();
-    log("lp-api", `→ ${method} ${path}`, body ? redact(JSON.stringify(body)).slice(0, 300) : undefined);
-    const r = await fetch(web + path, {
-      method,
-      headers: { authorization: `Bearer ${env.key}`, ...(body ? { "content-type": "application/json" } : {}) },
-      body: body ? JSON.stringify(body) : undefined,
-    });
-    const text = await r.text();
-    log("lp-api", `← ${r.status} ${method} ${path} ${Date.now() - t0}ms`, redact(text).slice(0, 500));
-    const json = (() => {
-      try {
-        return JSON.parse(text);
-      } catch {
-        return { detail: text.slice(0, 200) };
-      }
-    })();
-    if (!r.ok) throw Object.assign(new Error(typeof json.detail === "string" ? json.detail : JSON.stringify(json.detail ?? json)), { status: r.status });
-    return json;
-  }
   const who = { name: env.name ?? "", mobile: env.mobile ?? "" };
 
   return async (req: IncomingMessage, res: ServerResponse): Promise<boolean> => {
@@ -164,12 +142,11 @@ export function lpRoutes(env: LpEnv, log: Log) {
         return send(res, 200, summarise(a as never)), true;
       }
 
-      // Account Aggregator (Finpass): NOT in the SDK yet (no /v1/aa), so these call the web app's own
-      // /api/aa routes with the same lp_live_ key, logged as [lp-api]
+      // Account Aggregator (Finpass), through the SDK's `aa` resource (0.4.0+)
       if (url === "/lp/aa" && req.method === "POST") {
         const body = JSON.parse((await readRaw(req)).toString() || "{}");
         log("demo", "── real AA consent (Finpass) ──", { mobile: "••••" + who.mobile.slice(-4), customer: body.customer ?? null });
-        const c = await webApi("POST", "/api/aa/consents", {
+        const c = await client().aa.start({
           mobile: who.mobile,
           fi_months: 6,
           ...(body.customer ? { customer: body.customer } : {}),
@@ -179,13 +156,17 @@ export function lpRoutes(env: LpEnv, log: Log) {
       }
       const aa = url.match(/^\/lp\/aa\/([\w-]+)(\?refresh=1)?$/);
       if (aa && req.method === "GET") {
+        const lp = client();
         // a plain read; "refresh" (rate-limited) forces the server to ask Finpass now, its poll loop does it anyway
-        const c = aa[2]
-          ? await webApi("POST", `/api/aa/consents/${aa[1]}/refresh`).catch(() => webApi("GET", `/api/aa/consents/${aa[1]}`))
-          : await webApi("GET", `/api/aa/consents/${aa[1]}`);
-        let analysis = null;
-        const first = (c.analyses ?? [])[0];
-        if (c.status === "completed" && first?.id) analysis = summarise((await client().analyses.get(first.id, { includeResult: true })) as never);
+        let c = aa[2] ? await lp.aa.refresh(aa[1]).catch(() => lp.aa.get(aa[1])) : await lp.aa.get(aa[1]);
+        // "ready": the bank sent the statements and they wait to be picked; take them all
+        if (c.status === "ready" && !c.analyses.length) {
+          const names = c.statements.map((s) => s.name).filter((n): n is string => Boolean(n));
+          log("demo", "AA ready, analysing", { statements: names.length });
+          c = await lp.aa.analyse(aa[1], names);
+        }
+        const first = c.analyses[0];
+        const analysis = first?.id ? summarise((await lp.analyses.get(first.id, { includeResult: true })) as never) : null;
         return send(res, 200, { consent: c, analysis }), true;
       }
 

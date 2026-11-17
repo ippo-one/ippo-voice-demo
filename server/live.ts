@@ -8,6 +8,7 @@ import { appendFileSync, mkdirSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { dirname, resolve } from "node:path";
 import { lpRoutes, type LpEnv } from "./lp";
+import { mobileRoutes } from "./mobile";
 import { loadEnv, type Connect, type Plugin } from "vite";
 
 type Env = { key?: string; agentId?: string; baseUrl?: string; firstName?: string; lp: LpEnv };
@@ -65,10 +66,12 @@ function send(res: ServerResponse, status: number, body: unknown) {
 
 function routes(env: Env): Connect.NextHandleFunction {
   const lp = lpRoutes(env.lp, log);
+  const mobile = mobileRoutes(env.lp, log);
   const client = () => new LoanpilotAgents({ apiKey: env.key!, fetch: loggedFetch, ...(env.baseUrl ? { baseUrl: env.baseUrl } : {}) });
 
   return async (req, res, next) => {
     if (await lp(req, res)) return; // /lp/*: the real loan steps on app.ippo.one (LoanPilot SDK)
+    if (await mobile(req, res)) return; // /v1/*: the Flutter app's LoanPilot SDK, key added here
     if (!req.url?.startsWith("/live/")) return next();
     const configured = Boolean(env.key && env.agentId);
 
@@ -151,7 +154,8 @@ function routes(env: Env): Connect.NextHandleFunction {
     // the browser's call events, so one log shows the whole call
     if (req.url === "/live/log" && req.method === "POST") {
       const body = await readBody(req);
-      for (const e of (body.events as { what: string; data?: unknown; t?: number }[]) ?? []) log("web", e.what, e.data, e.t);
+      const src = body.source === "app" ? "app" : "web"; // "app": the Flutter app
+      for (const e of (body.events as { what: string; data?: unknown; t?: number }[]) ?? []) log(src, e.what, e.data, e.t);
       return send(res, 200, { ok: true });
     }
 
@@ -212,7 +216,7 @@ export function livePlugin(): Plugin {
         agentId: all.IPPO_AGENT_ID,
         baseUrl: all.LOANPILOT_AGENTS_URL,
         firstName: (all.TEST_NAME ?? "Mohan").split(" ")[0],
-        lp: { key: all.LOANPILOT_API_KEY, baseUrl: all.LOANPILOT_URL, webUrl: all.LOANPILOT_WEB_URL, name: all.TEST_NAME, mobile: all.TEST_MOBILE },
+        lp: { key: all.LOANPILOT_API_KEY, baseUrl: all.LOANPILOT_URL, name: all.TEST_NAME, mobile: all.TEST_MOBILE },
       };
       LOG_FILE = resolve(cfg.root, "logs/live.log");
       mkdirSync(dirname(LOG_FILE), { recursive: true });
